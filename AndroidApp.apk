@@ -1,0 +1,183 @@
+import android.content.Intent;
+import android.os.Handler;
+import android.support.v4.widget.SwipeRefreshLayout;
+import android.support.v7.app.AppCompatActivity;
+import android.os.Bundle;
+import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
+import android.widget.ImageView;
+import android.widget.ListView;
+import android.widget.RadioButton;
+import android.widget.TextView;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+
+import java.io.IOException;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Locale;
+
+import im.delight.android.webview.AdvancedWebView;
+
+public class MainActivity extends AppCompatActivity{
+
+
+
+
+    ArrayList<DustbinData> dustbinData;
+    TextView lastUpdatedView;
+
+    Handler handler;
+
+    String lat="",lon="";
+
+    RadioButton gt0,gt25,gt50,gt75;
+    VerticalProgress verticalProgress;
+    ImageView dustbinView;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+
+        lastUpdatedView=findViewById(R.id.lastUpdated);
+        dustbinData=new ArrayList<>();
+        handler=new Handler();
+
+        gt0=findViewById(R.id.gt0);
+        gt25=findViewById(R.id.gt25);
+        gt50=findViewById(R.id.gt50);
+        gt75=findViewById(R.id.gt75);
+
+        verticalProgress=findViewById(R.id.verticalProgress);
+        dustbinView=findViewById(R.id.dustbinFill);
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                while (true)
+                {
+                    refreshData();
+                    try {
+                        Thread.sleep(60*1000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        }).start();
+
+
+
+    }
+
+    public void refreshData()
+    {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                dustbinData.clear();
+                Document doc= null;
+                try {
+                    doc = Jsoup.connect("https://api.thingspeak.com/channels/716749/feeds.json?api_key=EZ0QS7SENTUP1IA9&results=2")
+                    .ignoreContentType(true)
+                            .get();
+
+                    if (doc == null) {
+                        return;
+                    }
+
+
+
+
+                    final JSONObject jobj=new JSONObject(doc.text());
+                    //jobj.get()
+                    JSONArray feedsArray=jobj.getJSONArray("feeds");
+                    for (int i=0;i<feedsArray.length();i++)
+                    {
+                        /*System.out.println(feedsArray.getJSONObject(i).get("field1")+", "
+                                +feedsArray.getJSONObject(i).get("created_at")+", "
+                                +feedsArray.getJSONObject(i).get("entry_id"));*/
+                        dustbinData.add(new
+                                DustbinData(feedsArray.getJSONObject(i).getString("created_at"),
+                                feedsArray.getJSONObject(i).getString("entry_id"),
+                                feedsArray.getJSONObject(i).getString("field1")));
+                    }
+
+
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            int g=0;
+                            DustbinData gd = null;
+
+                            for (int i=0;i<dustbinData.size();i++)
+                            {
+                                if (g<Integer.parseInt(dustbinData.get(i).entryId+""))
+                                {
+                                    g=Integer.parseInt(dustbinData.get(i).entryId+"");
+                                    gd=dustbinData.get(i);
+                                }
+                            }
+                            try {
+                                lat=jobj.getJSONObject("channel")
+                                        .getString("latitude");
+                                lon=jobj.getJSONObject("channel")
+                                        .getString("longitude");
+
+                            } catch (JSONException e) {
+                                e.printStackTrace();
+                            }
+
+                            if(Float.parseFloat(gd.field1)>0&&
+                                    Float.parseFloat(gd.field1)<25)
+                            {
+                                gt0.setChecked(true);
+                            }else if(Float.parseFloat(gd.field1)>25&&
+                                    Float.parseFloat(gd.field1)<50)
+                            {
+                                gt25.setChecked(true);
+                            }else if(Float.parseFloat(gd.field1)>50&&
+                                    Float.parseFloat(gd.field1)<75)
+                            {
+                                gt50.setChecked(true);
+                            }else if(Float.parseFloat(gd.field1)>75)
+                            {
+                                gt75.setChecked(true);
+                            }
+
+                            verticalProgress.setPercentage(Float.parseFloat(gd.field1));
+                            //verticalProgress.setPercentage(70);
+
+                            try {
+                                SimpleDateFormat sdf=new
+                                        SimpleDateFormat("yyyy-MM-dd'T'HH:mm",
+                                        Locale.ENGLISH);
+
+                                lastUpdatedView.setText(""+
+                                        sdf.parse(jobj.getJSONObject("channel")
+                                                .getString("updated_at"))
+                                .toString());
+                            } catch (JSONException e) {
+                                e.printStackTrace();
+                            } catch (ParseException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    });
+
+
+                } catch (IOException e) {
+                    e.printStackTrace();
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+            }
+        }).start();
